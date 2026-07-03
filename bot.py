@@ -420,7 +420,25 @@ def validate_key(session_key: str, proxy_url: str = "") -> tuple[bool, str, str]
         resp = s.get(f"{BASE_URL}/organizations", timeout=15)
 
         if resp.status_code == 403:
-            return False, "", "Session expired or invalid — log in to claude.ai again for a fresh key (or IP blocked, try /addproxy)"
+            ctype = resp.headers.get("Content-Type", "")
+            body  = resp.text[:300]
+            is_cloudflare = (
+                "text/html" in ctype
+                or "cloudflare" in body.lower()
+                or "cf-error" in body.lower()
+                or "<!doctype html" in body.lower()
+                or "just a moment" in body.lower()
+            )
+            log.warning(f"403 response — Content-Type: {ctype} — Body snippet: {body}")
+
+            if is_cloudflare:
+                return False, "", (
+                    "Blocked by Cloudflare (not an Anthropic auth error) — this proxy's IP is "
+                    "flagged as a bot. Try /nextproxy or add a different proxy with /addproxy"
+                )
+            else:
+                return False, "", "Session expired or invalid — log in to claude.ai again for a fresh key"
+
         if resp.status_code == 401:
             return False, "", "Unauthorized — key is invalid or has been revoked"
         if resp.status_code == 429:
